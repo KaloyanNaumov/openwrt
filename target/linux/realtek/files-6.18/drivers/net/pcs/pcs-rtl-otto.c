@@ -350,6 +350,13 @@ enum rtpcs_page {
 #define  RTL931X_RXEQ_LEQ_MANUAL_EN	BIT(7)
 #define  RTL931X_RXEQ_LEQ_INIT		GENMASK(6, 2)
 
+#define ANA_SPD_REG14			0x0e
+/* Undocumented; RX calibration selection is inferred from SDK use on PAGE_ANA_10G. */
+#define  RTL931X_RXCAL_SEL		GENMASK(13, 11)
+#define   RTL931X_RXCAL_SEL_DEFAULT	FIELD_PREP(RTL931X_RXCAL_SEL, 0x0)
+#define   RTL931X_RXCAL_SEL_FIBER		FIELD_PREP(RTL931X_RXCAL_SEL, 0x1)
+#define   RTL931X_RXCAL_SEL_DAC		FIELD_PREP(RTL931X_RXCAL_SEL, 0x2)
+
 #define ANA_SPD_REG15			0x0f
 #define  RTL930X_LOAD_IN_INIT_ALL	GENMASK(13, 7) /* Includes undocumented bit 12. */
 #define  RTL930X_LOAD_IN_INIT_VTH	BIT(13)
@@ -4182,7 +4189,8 @@ static int rtpcs_931x_sds_config_attachment(struct rtpcs_serdes *sds,
 	if (sds->type != RTPCS_SDS_TYPE_10G)
 		return 0;
 
-	rtpcs_sds_write_bits(sds, PAGE_ANA_10G, 0xe, 13, 11, 0x0);
+	rtpcs_sds_write_mask(sds, PAGE_ANA_10G, ANA_SPD_REG14,
+			     RTL931X_RXCAL_SEL, RTL931X_RXCAL_SEL_DEFAULT);
 
 	/* SDK media-none analog setup, applied regardless of attachment. */
 	rtpcs_931x_sds_10g_ana_pre(sds);
@@ -4282,8 +4290,16 @@ static int rtpcs_931x_sds_post_config(struct rtpcs_serdes *sds, enum rtpcs_sds_m
 		break;
 
 	case RTPCS_SDS_ATTACH_FIBER:
-		if (hw_mode == RTPCS_SDS_MODE_10GBASER)
-			ret = rtpcs_931x_sds_rxcal_fiber_adapt(sds);
+		if (hw_mode != RTPCS_SDS_MODE_10GBASER)
+			break;
+		ret = rtpcs_sds_write_mask(sds, PAGE_ANA_10G, ANA_SPD_REG14,
+					   RTL931X_RXCAL_SEL, RTL931X_RXCAL_SEL_FIBER);
+		if (ret < 0) {
+			dev_err(sds->ctrl->dev, "SerDes %u: RX calibration selection failed: %d\n",
+				sds->id, ret);
+			break;
+		}
+		ret = rtpcs_931x_sds_rxcal_fiber_adapt(sds);
 		break;
 
 	default:
