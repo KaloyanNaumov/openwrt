@@ -3970,8 +3970,6 @@ static void rtpcs_931x_sds_rx_reset(struct rtpcs_serdes *sds)
  */
 static int rtpcs_931x_sds_rxcal_leq_adapt(struct rtpcs_serdes *sds)
 {
-	dev_dbg(sds->ctrl->dev, "SerDes %u PHY-attached RX calibration...\n", sds->id);
-
 	rtpcs_931x_sds_rxeq_leq_set_coef(sds, 0);
 	rtpcs_sds_write_bits(sds, PAGE_ANA_10G, ANA_SPD_REG13, 1, 0, 0x0);   /* undocumented */
 	rtpcs_sds_write_bits(sds, PAGE_ANA_10G, ANA_SPD_REG13, 13, 13, 0x0); /* undocumented */
@@ -4010,7 +4008,6 @@ static int rtpcs_931x_sds_rxcal_fiber_adapt(struct rtpcs_serdes *sds)
 	int i, link = 0, samples = 0, symerr = -1;
 	struct device *dev = sds->ctrl->dev;
 
-	dev_dbg(dev, "SerDes %u fiber RX calibration...\n", sds->id);
 	/* per-port calibration offset in the SDK, kept 0 here */
 	rtpcs_sds_write_bits(sds, PAGE_ANA_10G, 0xc, 14, 10, 0x0);
 
@@ -4068,8 +4065,6 @@ static int rtpcs_931x_sds_rxcal_fiber_adapt(struct rtpcs_serdes *sds)
 				sds->id, link);
 			return link;
 		}
-		dev_dbg(dev, "SerDes %u symErr check %d: linkUp=%d symErr=0x%x\n", sds->id,
-			i + 1, link, symerr);
 
 		/*
 		 * symErr also reads 0 with no signal at all, not just a clean
@@ -4077,8 +4072,8 @@ static int rtpcs_931x_sds_rxcal_fiber_adapt(struct rtpcs_serdes *sds)
 		 * actually something being decoded.
 		 */
 		if (link && symerr <= 5) {
-			dev_dbg(dev, "SerDes %u fiber RX calibration OK (check %d)\n",
-				sds->id, i + 1);
+			dev_dbg(dev, "SerDes %u fiber RX calibration OK (check %d, symErr=0x%x)\n",
+				sds->id, i + 1, symerr);
 			return 0;
 		}
 	}
