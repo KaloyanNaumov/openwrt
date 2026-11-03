@@ -28,6 +28,7 @@
 #define RTPCS_RXMON_POLL_MS			500
 #define RTPCS_RXMON_DOWN_SAMPLES			3
 #define RTPCS_RXMON_RECOVERY_MS			30000
+#define RTPCS_RXMON_REVERIFY_MAX		3
 
 #define RTPCS_SPEED_10				0
 #define RTPCS_SPEED_100				1
@@ -586,9 +587,11 @@ struct rtpcs_serdes {
 	struct delayed_work cali_work;
 	enum rtpcs_rx_phase rx_phase;
 	u8 rxcal_tries;
+	bool rxcal_unverified;
 	struct delayed_work linkmon_work;
 	u8 rxmon_down;
 	u64 rxmon_recovery_after;
+	u8 rxmon_reverify;
 };
 
 struct rtpcs_ctrl {
@@ -2106,7 +2109,10 @@ static void rtpcs_93xx_rx_cali_work_handler(struct work_struct *work)
 		}
 		dev_warn(sds->ctrl->dev, "SerDes %u: RX calibration did not pass after %u attempts: %d\n",
 			 sds->id, sds->rxcal_tries, ret);
+	} else {
+		sds->rxmon_reverify = 0;
 	}
+	sds->rxcal_unverified = ret < 0;
 	rtpcs_93xx_sds_arm_linkmon(sds);
 unlock:
 	mutex_unlock(&sds->ctrl->lock);
@@ -2115,6 +2121,7 @@ unlock:
 static void rtpcs_93xx_rx_linkmon_work_handler(struct work_struct *work)
 {
 	struct rtpcs_serdes *sds;
+	bool reverify;
 	int link;
 
 	sds = container_of(to_delayed_work(work), struct rtpcs_serdes, linkmon_work);
@@ -2130,7 +2137,12 @@ static void rtpcs_93xx_rx_linkmon_work_handler(struct work_struct *work)
 				sds->id, link);
 		goto rearm;
 	}
-	if (link) {
+	/* A DAC lane can link on values that never verified; retry a bounded number of times. */
+	reverify = link && sds->rxcal_unverified &&
+		   (sds->attachment == RTPCS_SDS_ATTACH_DAC_SHORT ||
+		    sds->attachment == RTPCS_SDS_ATTACH_DAC_LONG) &&
+		   sds->rxmon_reverify < RTPCS_RXMON_REVERIFY_MAX;
+	if (link && !reverify) {
 		if (sds->rxmon_down)
 			dev_dbg(sds->ctrl->dev, "SerDes %u: RX link recovered during debounce\n",
 				sds->id);
@@ -2151,6 +2163,8 @@ static void rtpcs_93xx_rx_linkmon_work_handler(struct work_struct *work)
 	dev_dbg(sds->ctrl->dev,
 		"SerDes %u: RX link loss confirmed; restoring baseline and rearming calibration\n",
 		sds->id);
+	if (reverify)
+		sds->rxmon_reverify++;
 	sds->ops->post_config(sds, sds->hw_mode);
 	sds->rxmon_recovery_after = get_jiffies_64() +
 				    msecs_to_jiffies(RTPCS_RXMON_RECOVERY_MS);
@@ -4960,6 +4974,7 @@ static int rtpcs_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 					sds->id);
 			sds->rx_phase = RTPCS_RX_PHASE_IDLE;
 			sds->rxmon_down = 0;
+			sds->rxmon_reverify = 0;
 		}
 
 		if (mode_changed) {
