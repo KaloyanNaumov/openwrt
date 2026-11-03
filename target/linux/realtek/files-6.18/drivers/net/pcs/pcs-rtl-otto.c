@@ -4316,16 +4316,22 @@ static int rtpcs_931x_sds_rxcal_dac_adapt(struct rtpcs_serdes *sds)
 			"SerDes %u DAC check %d: linkUp=%d latch_sts=%d LEQ=%d symErr=0x%x\n",
 			sds->id, i + 1, link, latch_sts, leq, symerr);
 		if (latch_sts && link && leq < 20 && symerr <= 5) {
-			dev_dbg(dev,
-				"SerDes %u DAC RX calibration OK: LEQ=%#x VTH=%#x\n",
-				sds->id, leq, vth);
+			dev_info(dev,
+				 "SerDes %u DAC RX calibration OK: LEQ=%d VTH=%#x symErr=0x%x attempt %u/%u\n",
+				 sds->id, leq, vth, symerr, sds->rxcal_tries,
+				 RTPCS_RXCAL_MAX_TRIES);
 			return 0;
 		}
 	}
 
-	dev_dbg(dev,
-		"SerDes %u DAC RX calibration did not pass: linkUp=%d latch_sts=%d LEQ=%d symErr=0x%x\n",
-		sds->id, link, latch_sts, leq, symerr);
+	if (sds->rxcal_tries >= RTPCS_RXCAL_MAX_TRIES)
+		dev_warn(dev,
+			 "SerDes %u DAC RX calibration failed: linkUp=%d latch_sts=%d LEQ=%d VTH=%#x symErr=0x%x\n",
+			 sds->id, link, latch_sts, leq, vth, symerr);
+	else
+		dev_dbg(dev,
+			"SerDes %u DAC RX calibration did not pass: linkUp=%d latch_sts=%d LEQ=%d VTH=%#x symErr=0x%x\n",
+			sds->id, link, latch_sts, leq, vth, symerr);
 	return link ? -EIO : -ENOLINK;
 }
 
